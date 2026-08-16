@@ -1,0 +1,16 @@
+---
+name: cyber_boss
+display_name: 群主养成计划
+short_desc: 群主是全群共享 Boss：随手 /砍 一刀，随机事件与沙雕文案齐飞；击杀后群主升级复活、血量+20%，越打越强。支持换养任意群友当 Boss。
+desc: 群主养成计划 · 全群共斗养成小游戏。群主（或任意群友）作为共享 Boss，人人可用 /砍 随手砍一刀：暴击掏出祖传键盘、闪避已读不回、反击禁言住院、心软倒贴回血、神器 main.py 一刀999。血条清零即完成击杀，弑主者进名人堂，Boss 升级复活血量+20%，越养越强。支持 /boss 状态 查血条、/boss 养 @某人 换养新 Boss、/boss 排行 本轮输出榜、/boss 名人堂 历代击杀记录。纯本地随机引擎，不调用 LLM。
+version: 1.0.0
+author: ruoyuxian20-sys
+repo: https://github.com/ruoyuxian20-sys/astrbot_plugin_cyber_boss
+astrbot_version: ">=4.9.2"
+tags:
+  - 群主
+  - Boss战
+  - 随手玩
+  - 游戏
+  - 梗
+---

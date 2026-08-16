@@ -1,0 +1,37 @@
+{
+  "initial_hp": {
+    "description": "第 1 代 Boss 的初始血量。全群共享一个血条，人数多的群可以调大。",
+    "type": "int",
+    "default": 10000,
+    "hint": "建议 2000-100000"
+  },
+  "hp_growth": {
+    "description": "Boss 每次被击杀后复活时血量的成长倍率。",
+    "type": "float",
+    "default": 1.2,
+    "hint": "建议 1.05-1.5"
+  },
+  "hospital_seconds": {
+    "description": "被 Boss 反击后「住院」的时长（秒），住院期间不能砍 Boss。",
+    "type": "int",
+    "default": 60,
+    "hint": "建议 10-600"
+  },
+  "attack_cooldown_seconds": {
+    "description": "同一个人两次砍 Boss 之间的最小间隔（秒），防刷屏。",
+    "type": "float",
+    "default": 3,
+    "hint": "建议 1-30"
+  },
+  "ranking_size": {
+    "description": "输出排行与名人堂显示的条目数量上限。",
+    "type": "int",
+    "default": 10,
+    "hint": "建议 3-20"
+  },
+  "use_image": {
+    "description": "是否用图文卡片输出 Boss 血条。需要 AstrBot 文本转图（T2I）功能可用；渲染失败会自动回退到纯文本。砍一刀的结果始终以纯文本输出以保证速度。",
+    "type": "bool",
+    "default": false
+  }
+}
