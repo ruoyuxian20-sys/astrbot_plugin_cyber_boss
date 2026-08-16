@@ -78,8 +78,8 @@ def test_boss_title_ladder_monotonic():
 def test_player_titles_cover_thresholds():
     for key in storage._TITLE_THRESHOLDS:
         assert key in flavor.PLAYER_TITLES, key
-    assert flavor.regicide_title(3) == "弑主者Lv3"
-    assert flavor.regicide_title(0) == "弑主者Lv1"
+    assert flavor.regicide_title(3) == "弑猪者Lv3"
+    assert flavor.regicide_title(0) == "弑猪者Lv1"
 
 
 # ---------- 引擎 ----------
@@ -88,7 +88,7 @@ def test_player_titles_cover_thresholds():
 def test_new_boss_defaults():
     boss = engine.new_boss()
     assert boss["target_id"] == ""
-    assert boss["target_name"] == "群主"
+    assert boss["target_name"] == "小猪"
     assert boss["level"] == 1 and boss["generation"] == 1
     assert boss["hp"] == boss["max_hp"] == 10000
     assert engine.new_boss(initial_hp=50)["max_hp"] == 100  # 下限保护
@@ -244,7 +244,7 @@ def test_settle_kill_flow():
 
     entry = storage.settle_kill(data, "u2", "李四", _Res("hit", 50), now=400.0)
     assert entry["generation"] == 1
-    assert entry["boss_title"] == "新手群主"
+    assert entry["boss_title"] == "新手小猪"
     assert entry["total_damage"] == 1100
     assert entry["players"] == 2
     assert entry["duration_s"] == 300.0
@@ -279,7 +279,7 @@ def test_player_report_titles():
     assert report["display_titles"] == []  # 无击杀无成就
     storage.settle_kill(data, "u1", "张三", _Res("hit", 10))
     report = storage.player_report(data, "u1")
-    assert report["display_titles"] == ["弑主者Lv1", "主力输出"]
+    assert report["display_titles"] == ["弑猪者Lv1", "主力输出"]
     assert storage.player_report(data, "nobody") is None
 
 
@@ -310,13 +310,13 @@ def test_format_outputs_shape():
     }
     assert "全群输出 3" in render.format_status_text(_boss(), fight, [], now=100.0)
 
-    rank = render.format_rank_text([{"name": "甲", "damage": 9, "hits": 2}], "群主")
-    assert "甲" in rank and "还没" in render.format_rank_text([], "群主")
+    rank = render.format_rank_text([{"name": "甲", "damage": 9, "hits": 2}], "小猪")
+    assert "甲" in rank and "还没" in render.format_rank_text([], "小猪")
 
     hall = storage.hall_rows({"hall": []})
     assert render.format_hall_text(hall).startswith("📜")
 
-    me = render.format_me_text(None, "群主")
+    me = render.format_me_text(None, "小猪")
     assert "/砍" in me
 
 
@@ -327,13 +327,13 @@ def test_format_kill_text():
     entry = storage.settle_kill(data, "u2", "李四", _Res("hit", 1), now=20.0)
     assert entry["top_name"] == "张三" and entry["top_damage"] == 5000
     boss_after = engine.new_boss(initial_hp=12000)
-    boss_after.update({"level": 2, "generation": 2, "target_name": "群主"})
+    boss_after.update({"level": 2, "generation": 2, "target_name": "小猪"})
     text = render.format_kill_text(
         _Res("hit", 1), boss_after, "李四", entry, random.Random(1)
     )
-    assert "李四" in text and "弑主者Lv1" in text
+    assert "李四" in text and "弑猪者Lv1" in text
     assert "张三" in text and "主力输出" in text
-    assert "Lv2" in text and "已读不回学徒" in text
+    assert "Lv2" in text and "已读不回猪仔" in text
 
 
 def test_build_boss_html():
@@ -344,7 +344,7 @@ def test_build_boss_html():
     html = render.build_boss_html(
         _boss(hp=1500), fight, [{"name": "张三", "damage": 3}], 100.0
     )
-    assert "群主" in html and "新手群主" in html and "狂暴" in html
+    assert "小猪" in html and "新手小猪" in html and "狂暴" in html
     escaped = render.build_boss_html(_boss(target_name="<script>"), None, [], 0.0)
     assert "<script>" not in escaped and "&lt;script&gt;" in escaped
 

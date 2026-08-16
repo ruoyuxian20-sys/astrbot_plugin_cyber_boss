@@ -38,14 +38,14 @@ def boss_headline(boss: dict) -> str:
     """Boss 一行简介。"""
     name = flavor.boss_title(int(boss.get("level", 1)))
     return (
-        f"⚔️ {boss.get('target_name', '群主')} · {name}"
+        f"⚔️ {boss.get('target_name', '小猪')} · {name}"
         f" · Lv{int(boss.get('level', 1))} · 第{int(boss.get('generation', 1))}代"
     )
 
 
 def format_attack_text(result, boss: dict) -> str:
     """一次 /砍 的纯文本输出（不含击杀播报，那由 format_kill_text 负责）。"""
-    name = boss.get("target_name", "群主")
+    name = boss.get("target_name", "小猪")
     hp, max_hp = int(boss["hp"]), int(boss["max_hp"])
     lines = [result.line]
     if result.kind in ("hit", "crit", "artifact"):
@@ -71,7 +71,7 @@ def format_kill_text(
 ) -> str:
     """击杀播报：倒下 + 战报 + 复活。主力输出信息来自 settle_kill 写入的 entry。"""
     rng = rng or random.Random()
-    old_name = entry.get("boss_name", "群主")
+    old_name = entry.get("boss_name", "小猪")
     lines = [
         rng.choice(flavor.KILL_HEADER).format(boss=old_name),
         (
@@ -89,7 +89,7 @@ def format_kill_text(
             f"🥇 主力输出：{entry['top_name']}（{entry.get('top_damage', 0)} 点）"
         )
     new_title = flavor.boss_title(int(boss_after.get("level", 2)))
-    new_name = boss_after.get("target_name", "群主")
+    new_name = boss_after.get("target_name", "小猪")
     lines.append(rng.choice(flavor.REVIVE_LINES).format(boss=new_name))
     lines.append(
         f"✨ Lv{int(boss_after.get('level', 2))} · {new_title}"
@@ -106,7 +106,7 @@ def format_status_text(
     lines = [boss_headline(boss), f"血量 {text_bar(hp, max_hp)}（{hp}/{max_hp}）"]
     if hp <= max_hp * 0.2:
         lines.append(
-            flavor.ENRAGE_LINES[0].format(boss=boss.get("target_name", "群主"))
+            flavor.ENRAGE_LINES[0].format(boss=boss.get("target_name", "小猪"))
         )
     if fight and isinstance(fight.get("board"), dict) and fight["board"]:
         total = sum(int(r.get("damage", 0)) for r in fight["board"].values())
@@ -135,8 +135,8 @@ def format_rank_text(rows: list[dict], boss_name: str) -> str:
 def format_hall_text(rows: list[dict]) -> str:
     """/boss 名人堂 输出。"""
     if not rows:
-        return "📜 还没有 Boss 倒下过。第一个弑主者会是谁？/砍 开始围剿！"
-    lines = ["📜 弑主名人堂（最新在前）", ""]
+        return "📜 还没有 Boss 倒下过。第一个弑猪者会是谁？/砍 开始围剿！"
+    lines = ["📜 弑猪名人堂（最新在前）", ""]
     for row in rows:
         lines.append(
             f"第{row['generation']}代 · {row['boss_name']}（{row['boss_title']}）"
@@ -162,7 +162,7 @@ def format_me_text(report: dict | None, boss_name: str) -> str:
             f" · 被反击 {int(report.get('countered', 0))}"
         ),
         f"💗 心软 {int(report.get('mercy', 0))} · 神器 {int(report.get('artifact', 0))}",
-        f"🗡️ 弑主 {int(report.get('kills', 0))} 次",
+        f"🗡️ 弑猪 {int(report.get('kills', 0))} 次",
     ]
     titles = report.get("display_titles") or []
     lines.append(f"🏅 称号：{'、'.join(titles) if titles else '（暂无，继续肝）'}")
@@ -204,7 +204,7 @@ def build_boss_html(
     hp, max_hp = int(boss["hp"]), int(boss["max_hp"])
     pct = max(0.0, min(1.0, hp / max(1, max_hp)))
     enraged = hp <= max_hp * 0.2
-    name = html_escape.escape(str(boss.get("target_name", "群主")))
+    name = html_escape.escape(str(boss.get("target_name", "小猪")))
     title = html_escape.escape(flavor.boss_title(int(boss.get("level", 1))))
 
     fight_html = ""
@@ -234,7 +234,7 @@ def build_boss_html(
     <span class="name">⚔️ {name}</span>
     <span class="title">{title}</span>
   </div>
-  <div class="meta">Lv{int(boss.get("level", 1))} · 第{int(boss.get("generation", 1))}代 · 群主养成计划</div>
+  <div class="meta">Lv{int(boss.get("level", 1))} · 第{int(boss.get("generation", 1))}代 · 小猪养成计划</div>
   <div class="bar-wrap"><div class="{bar_cls}" style="width:{pct:.1%}"></div></div>
   <div class="hp-num">{hp} / {max_hp}（{pct:.0%}）</div>
   {enrage_tag}

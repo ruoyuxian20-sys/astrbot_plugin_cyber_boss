@@ -23,7 +23,7 @@ _KIND_STATS = {
 
 # 成就称号的触发阈值（累计次数）
 _TITLE_THRESHOLDS = {
-    "filial": ("mercy", 5),  # 群主孝子：心软 5 次
+    "filial": ("mercy", 5),  # 小猪孝子：心软 5 次
     "hospitalized": ("countered", 10),  # 住院常客：被反击 10 次
     "coder": ("artifact", 1),  # 代码术士：触发过神器
 }
@@ -158,7 +158,7 @@ def settle_kill(
 
     entry = {
         "generation": int(old_boss.get("generation", 1)),
-        "boss_name": old_boss.get("target_name", "群主"),
+        "boss_name": old_boss.get("target_name", "小猪"),
         "boss_title": flavor.boss_title(int(old_boss.get("level", 1))),
         "boss_level": int(old_boss.get("level", 1)),
         "killer_id": killer_id,

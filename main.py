@@ -1,4 +1,4 @@
-"""群主养成计划插件：群主是全群共享 Boss，随手一刀，越砍越强。"""
+"""小猪养成计划插件：小猪是全群共享 Boss，随手一刀，越砍越强。"""
 
 from __future__ import annotations
 
@@ -21,29 +21,29 @@ from .core.render import (
     format_status_text,
 )
 
-_HELP_TEXT = """⚔️ 群主养成计划 · 玩法说明
+_HELP_TEXT = """⚔️ 小猪养成计划 · 玩法说明
 
 /砍
     随手一刀：可能暴击、被闪避、被反击住院、心软给 Boss 回血、掏出神器
 /boss 状态
     查看 Boss 血条、等级、称号与本轮战况
 /boss 养 @某人
-    换养一个新 Boss（任意群友），从 Lv1 重新开始养成；仅机器人管理员可操作
+    换养一个新小猪 Boss（任意群友），从 Lv1 重新开始养成；仅机器人管理员可操作
 /boss 排行
     本轮对 Boss 的输出排行
 /boss 名人堂
-    历代弑主者记录
+    历代弑猪者记录
 /boss 我
     个人战报与称号
 /boss 帮助
     查看本说明
 
-Boss 血量清零即被击杀：击杀者获「弑主者」称号，
+Boss 血量清零即被击杀：击杀者获「弑猪者」称号，
 本轮输出第一授「主力输出」；随后 Boss 升级复活、血量 +20%，
 越砍越强——这就是养成。
-纯属娱乐，请勿真的攻击群主。"""
+纯属娱乐，请勿真的攻击小猪。"""
 
-_GROUP_WORDS = {"boss", "群主", "养成"}
+_GROUP_WORDS = {"boss", "小猪", "养成"}
 _SUB_WORDS = {
     "help",
     "帮助",
@@ -72,7 +72,7 @@ _SUB_WORDS = {
 
 
 class CyberBoss(Star):
-    """群主养成计划：全群共斗养成小游戏，不调用 LLM。"""
+    """小猪养成计划：全群共斗养成小游戏，不调用 LLM。"""
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -184,7 +184,7 @@ class CyberBoss(Star):
         return data
 
     def _boss(self, data: dict) -> dict:
-        """取当前 Boss；没有则生成第 1 代虚拟群主。"""
+        """取当前 Boss；没有则生成第 1 代虚拟小猪。"""
         boss = data.get("boss")
         if not isinstance(boss, dict) or not boss:
             boss = engine.new_boss(initial_hp=self._initial_hp())
@@ -292,13 +292,13 @@ class CyberBoss(Star):
 
     # ---------- 命令组 ----------
 
-    @filter.command_group("boss", alias={"群主", "养成"})
+    @filter.command_group("boss", alias={"小猪", "养成"})
     def boss():
-        """群主养成计划：/boss 状态|养|排行|名人堂|我|帮助"""
+        """小猪养成计划：/boss 状态|养|排行|名人堂|我|帮助"""
 
     @boss.command("help", alias={"帮助", "菜单"})
     async def help_cmd(self, event: AstrMessageEvent):
-        """查看群主养成计划使用说明"""
+        """查看小猪养成计划使用说明"""
         yield event.plain_result(_HELP_TEXT)
 
     @boss.command("status", alias={"状态", "血条", "查看"})
@@ -357,7 +357,7 @@ class CyberBoss(Star):
 
     @boss.command("hall", alias={"名人堂", "历史"})
     async def hall_cmd(self, event: AstrMessageEvent):
-        """历代弑主者记录"""
+        """历代弑猪者记录"""
         data = self._group_data(self._group_key(event))
         rows = storage.hall_rows(data, self._ranking_size())
         yield event.plain_result(format_hall_text(rows))

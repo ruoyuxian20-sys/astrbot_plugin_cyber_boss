@@ -44,7 +44,7 @@ class AttackResult:
 
 def new_boss(
     target_id: str = "",
-    target_name: str = "群主",
+    target_name: str = "小猪",
     initial_hp: int = 10000,
     generation: int = 1,
 ) -> dict:
@@ -52,7 +52,7 @@ def new_boss(
     hp = max(100, int(initial_hp))
     return {
         "target_id": str(target_id or ""),
-        "target_name": (target_name or "群主").strip() or "群主",
+        "target_name": (target_name or "小猪").strip() or "小猪",
         "level": 1,
         "max_hp": hp,
         "hp": hp,
@@ -61,7 +61,7 @@ def new_boss(
 
 
 def boss_display_name(boss: dict) -> str:
-    return boss.get("target_name") or "群主"
+    return boss.get("target_name") or "小猪"
 
 
 def is_enraged(boss: dict) -> bool:
