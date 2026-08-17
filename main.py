@@ -15,8 +15,13 @@ from astrbot.api.star import Context, Star
 from .core import economy, engine, flavor, storage
 from .core.render import (
     build_boss_html,
+    build_hall_html,
+    build_inventory_html,
     build_panel_html,
+    build_profile_html,
+    build_rank_html,
     build_shop_catalog_html,
+    build_titles_html,
     format_attack_text,
     format_hall_text,
     format_inventory_text,
@@ -221,11 +226,11 @@ class CyberBoss(Star):
         reduction = min(0.60, max(0.0, float(modifiers.get("hospital_reduction", 0.0))))
         return max(5, round(self._hospital_seconds() * (1 - reduction)))
 
-    async def _panel_result(self, event: AstrMessageEvent, title: str, body: str):
+    async def _panel_result(self, event: AstrMessageEvent, title: str, body: str, card_html: str | None = None):
         """商店、背包与个人页的图文回退输出。"""
         if self._cfg("use_image", False):
             try:
-                url = await self.html_render(build_panel_html(title, body), {})
+                url = await self.html_render(card_html or build_panel_html(title, body), {})
                 return event.image_result(url)
             except Exception as e:
                 logger.warning(f"cyber_boss {title} 图片渲染失败，回退纯文本: {e}")
@@ -464,16 +469,16 @@ class CyberBoss(Star):
         key = self._group_key(event)
         data = self._group_data(key)
         rows = storage.ranking(data, self._ranking_size())
-        yield event.plain_result(
-            format_rank_text(rows, engine.boss_display_name(self._boss(data)))
-        )
+        boss_name = engine.boss_display_name(self._boss(data))
+        body = format_rank_text(rows, boss_name)
+        yield await self._panel_result(event, "本轮输出排行", body, build_rank_html(rows, boss_name))
 
     @boss.command("hall", alias={"名人堂", "历史"})
     async def hall_cmd(self, event: AstrMessageEvent):
         """/boss 名人堂 — 查看历代 Boss 的击杀、输出和耗时记录。"""
         data = self._group_data(self._group_key(event))
         rows = storage.hall_rows(data, self._ranking_size())
-        yield event.plain_result(format_hall_text(rows))
+        yield await self._panel_result(event, "弑猪名人堂", format_hall_text(rows), build_hall_html(rows))
 
     @boss.command("me", alias={"我", "战报", "我的"})
     async def me_cmd(self, event: AstrMessageEvent):
@@ -482,7 +487,7 @@ class CyberBoss(Star):
         data = self._group_data(key)
         report = storage.player_report(data, self._sender_id(event) or "unknown", self._sender_name(event) or "群友")
         body = format_me_text(report, engine.boss_display_name(self._boss(data)))
-        yield await self._panel_result(event, "我的战报", body)
+        yield await self._panel_result(event, "我的战报", body, build_profile_html(report, engine.boss_display_name(self._boss(data))))
 
     @boss.command("shop", alias={"商店"})
     async def shop_cmd(self, event: AstrMessageEvent, view: str = "全览"):
@@ -523,7 +528,7 @@ class CyberBoss(Star):
         key = self._group_key(event)
         report = storage.player_report(self._group_data(key), self._sender_id(event) or "unknown", self._sender_name(event) or "群友")
         body = format_inventory_text(report)
-        yield await self._panel_result(event, "我的背包", body)
+        yield await self._panel_result(event, "我的背包", body, build_inventory_html(report))
 
     @boss.command("equip", alias={"装备"})
     async def equip_cmd(self, event: AstrMessageEvent, item_id: str = ""):
@@ -558,7 +563,7 @@ class CyberBoss(Star):
         key = self._group_key(event)
         report = storage.player_report(self._group_data(key), self._sender_id(event) or "unknown", self._sender_name(event) or "群友")
         body = format_titles_text(report)
-        yield await self._panel_result(event, "称号收藏", body)
+        yield await self._panel_result(event, "称号收藏", body, build_titles_html(report))
 
     @boss.command("title", alias={"佩戴称号"})
     async def title_cmd(self, event: AstrMessageEvent, title_id: str = ""):

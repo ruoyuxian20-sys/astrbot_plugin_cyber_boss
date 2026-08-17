@@ -418,6 +418,15 @@ def test_economy_page_rendering_and_panel_escaping():
     assert "称号收藏" in render.format_titles_text(report)
     panel = render.build_panel_html("<商店>", "<script>")
     assert "&lt;商店&gt;" in panel and "&lt;script&gt;" in panel
+    assert "view-help" in panel and "pig-float" in panel
+
+    profile = render.build_profile_html(report, "小猪")
+    inventory = render.build_inventory_html(report)
+    titles = render.build_titles_html(report)
+    rank_card = render.build_rank_html([{"name": "甲", "damage": 9, "hits": 2}], "小猪")
+    hall_card = render.build_hall_html([{"generation": 1, "boss_name": "小猪", "killer_name": "甲", "total_damage": 9}])
+    assert "view-profile" in profile and "view-inventory" in inventory
+    assert "view-titles" in titles and "view-rank" in rank_card and "view-hall" in hall_card
 
 
 def test_catalog_sections_and_exact_name_purchase():
@@ -524,7 +533,7 @@ def test_build_boss_html():
     html = render.build_boss_html(
         _boss(hp=1500), fight, [{"name": "张三", "damage": 3}], 100.0
     )
-    assert "小猪" in html and "新手小猪" in html and "狂暴" in html
+    assert "小猪" in html and "新手小猪" in html and "狂暴" in html and "view-status" in html
     escaped = render.build_boss_html(_boss(target_name="<script>"), None, [], 0.0)
     assert "<script>" not in escaped and "&lt;script&gt;" in escaped
 

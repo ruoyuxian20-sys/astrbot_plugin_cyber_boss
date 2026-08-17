@@ -258,16 +258,15 @@ def build_shop_catalog_html(title: str, sections: list[tuple[str, list[dict]]], 
         )
     css = """
     <style>
-    body{margin:0;padding:28px;background:#121722;color:#edf2ff;font-family:'Microsoft YaHei','PingFang SC',sans-serif;width:860px}
-    .card{background:#1b2333;border:1px solid #31405a;border-radius:16px;padding:24px}
-    h1{margin:0;color:#ffd56a;font-size:30px} .meta{margin:8px 0 4px;color:#c4d0e8;font-size:15px}
-    .equip{margin:0 0 20px;color:#98a8c8;font-size:13px} section{margin:18px 0}
-    h2{margin:0;padding:8px 12px;background:#27344b;border-radius:8px;color:#9dd6ff;font-size:18px}
-    .shop-item{display:grid;grid-template-columns:260px 1fr;gap:3px 14px;padding:9px 10px;border-bottom:1px solid #2d394e}
-    .shop-item b{color:#f4f7ff;font-size:15px}.shop-item span{color:#f7c85e;font-size:13px}.shop-item small{grid-column:1 / -1;color:#bdc9dc;font-size:13px}
-    .foot{margin-top:20px;color:#8fa3c8;font-size:13px}
+    body{margin:0;padding:30px;background:#fff8f1;color:#5c4650;font-family:'Microsoft YaHei','PingFang SC',sans-serif;width:900px;position:relative}
+    body:before{content:'';position:fixed;inset:0;background:radial-gradient(circle at 10% 6%,rgba(255,193,160,.55),transparent 24%),radial-gradient(circle at 90% 16%,rgba(255,170,192,.43),transparent 24%),linear-gradient(118deg,transparent 49.6%,rgba(236,163,177,.18) 50%,transparent 50.4%),linear-gradient(30deg,transparent 49.7%,rgba(121,201,204,.15) 50%,transparent 50.3%);background-size:auto,auto,150px 120px,150px 120px;pointer-events:none}
+    .card{position:relative;background:rgba(255,255,255,.86);border:1px solid #fff;border-radius:28px;padding:26px;box-shadow:0 20px 50px rgba(185,126,112,.16)}
+    h1{margin:0;color:#a85f70;font-size:31px}.meta{margin:8px 0 4px;color:#8f707a;font-size:15px}.equip{margin:0 0 20px;color:#9c7d80;font-size:13px}section{margin:17px 0}
+    h2{margin:0;padding:9px 12px;border-radius:12px;background:linear-gradient(90deg,#fff0e6,#fff8f8);color:#b66b7b;font-size:18px}
+    .shop-item{display:grid;grid-template-columns:270px 1fr;gap:3px 14px;padding:10px;border-bottom:1px dashed #efdde0}.shop-item b{color:#674852;font-size:15px}.shop-item span{color:#c07a4f;font-size:13px}.shop-item small{grid-column:1 / -1;color:#8b7178;font-size:13px}
+    .foot{margin-top:20px;color:#a47c87;font-size:13px}.pig{position:absolute;right:25px;top:22px;font-size:46px;filter:drop-shadow(0 5px 6px rgba(230,132,155,.22))}
     </style>"""
-    return f"""<!DOCTYPE html><html><head><meta charset=\"utf-8\">{css}</head><body><div class=\"card\">
+    return f"""<!DOCTYPE html><html><head><meta charset=\"utf-8\">{css}</head><body><div class=\"card\"><div class=\"pig\">🐷</div>
     <h1>{html_escape.escape(title)}</h1>
     <div class=\"meta\">💰 {int(report.get('gold', 0))} 金币 · 🪙 {int(report.get('marks', 0))} 印记 · 猎手 {rank['level']} 阶 · {html_escape.escape(rank.get('name', ''))}</div>
     <div class=\"equip\">当前配装：{html_escape.escape(equipped_text)}</div>
@@ -308,37 +307,205 @@ def format_titles_text(report: dict) -> str:
 
 
 def build_panel_html(title: str, body: str) -> str:
-    """通用图卡页面，保留换行并转义用户数据。"""
+    """通用帮助/说明图卡，保留换行并转义用户数据。"""
     return f"""<!DOCTYPE html><html><head><meta charset=\"utf-8\">{_CARD_CSS}</head>
-<body><div class=\"card\"><div class=\"name\">{html_escape.escape(title)}</div>
-<pre style=\"white-space:pre-wrap;font:14px Microsoft YaHei;color:#e8e8f0;line-height:1.6\">{html_escape.escape(body)}</pre>
-</div></body></html>"""
+<body class=\"view-help\"><div class=\"card panel-card\"><div class=\"pig-float\">🐷</div><div class=\"panel-kicker\">小猪养成计划</div>
+<div class=\"name\">{html_escape.escape(title)}</div><div class=\"panel-rule\"></div>
+<pre class=\"panel-text\">{html_escape.escape(body)}</pre></div></body></html>"""
+
+
+def _dashboard_html(title: str, subtitle: str, sections: list[tuple[str, list[tuple[str, str]]]], *, variant: str, pig: str) -> str:
+    """统一的网络小猪数据卡片骨架，供个人、背包、排行和名人堂复用。"""
+    section_html = []
+    for heading, rows in sections:
+        items = "".join(
+            "<div class=\"data-row\"><span>"
+            + html_escape.escape(str(label))
+            + "</span><strong>"
+            + html_escape.escape(str(value))
+            + "</strong></div>"
+            for label, value in rows
+        ) or '<div class="empty">暂无记录</div>'
+        section_html.append(
+            f"<section class=\"data-section\"><h2>{html_escape.escape(heading)}</h2>{items}</section>"
+        )
+    return f"""<!DOCTYPE html><html><head><meta charset=\"utf-8\">{_CARD_CSS}</head>
+<body class=\"view-{html_escape.escape(variant)}\"><div class=\"card dashboard-card\"><div class=\"pig-float\">{pig}</div><div class=\"panel-kicker\">小猪养成计划</div>
+<div class=\"dashboard-title\">{html_escape.escape(title)}</div>
+<div class=\"dashboard-subtitle\">{html_escape.escape(subtitle)}</div>
+<div class=\"dashboard-grid\">{''.join(section_html)}</div></div></body></html>"""
+
+
+def build_profile_html(report: dict, boss_name: str) -> str:
+    rank = report.get("rank") or {}
+    equipment = report.get("equipped") or {}
+    gear_rows = []
+    for slot in economy.SLOTS:
+        item = economy.product(equipment.get(slot) or "")
+        gear_rows.append((economy.SLOT_NAMES[slot], item["name"] if item else "未装备"))
+    stats = [
+        ("猎手阶位", f"{rank.get('level', 1)} 阶 · {rank.get('name', '见习猎手')}"),
+        ("金币 / 印记", f"{report.get('gold', 0)} / {report.get('marks', 0)}"),
+        ("累计输出", f"{report.get('total_damage', 0)} 点"),
+        ("弑猪次数", f"{report.get('kills', 0)} 次"),
+    ]
+    combat = [
+        ("当前称号", report.get("active_title_name", "未佩戴")),
+        ("关键加成", economy.effect_summary(report.get("modifiers") or {})),
+        ("暴击 / 神器", f"{report.get('crit', 0)} / {report.get('artifact', 0)} 次"),
+        ("已武装", (economy.product(report.get("armed_consumable") or "") or {}).get("name", "无")),
+    ]
+    return _dashboard_html(
+        f"{report.get('name', '群友')} 的战报",
+        f"正在挑战：{boss_name}",
+        [("成长概览", stats), ("当前配装", gear_rows), ("战斗状态", combat)], variant="profile", pig="🐷",
+    )
+
+
+def build_inventory_html(report: dict) -> str:
+    equipment = report.get("equipped") or {}
+    gear_rows = []
+    for slot in economy.SLOTS:
+        item = economy.product(equipment.get(slot) or "")
+        gear_rows.append((economy.SLOT_NAMES[slot], item["name"] if item else "未装备"))
+    inventory = report.get("inventory") or {}
+    inventory_rows = [
+        (f"{item_id} · {(economy.product(item_id) or {}).get('name', item_id)}", f"×{count}")
+        for item_id, count in sorted(inventory.items())
+    ]
+    summary = [
+        ("金币", str(report.get("gold", 0))),
+        ("猪神印记", str(report.get("marks", 0))),
+        ("已武装消耗品", (economy.product(report.get("armed_consumable") or "") or {}).get("name", "无")),
+    ]
+    return _dashboard_html("我的背包", "装备可自由混搭，消耗品将在下一次有效攻击时生效", [("货币与准备", summary), ("当前配装", gear_rows), ("持有物品", inventory_rows)], variant="inventory", pig="🐽")
+
+
+def build_titles_html(report: dict) -> str:
+    title_rows = [
+        (f"{title['id']} · {title['name']}", title["description"])
+        for title in report.get("title_options") or []
+    ]
+    return _dashboard_html(
+        "称号收藏",
+        f"当前佩戴：{report.get('active_title_name', '未佩戴')} · 同时只能生效一个",
+        [("已解锁称号", title_rows)], variant="titles", pig="🏅",
+    )
+
+
+def build_rank_html(rows: list[dict], boss_name: str) -> str:
+    rank_rows = [
+        (f"{index}. {row.get('name', '群友')}", f"{row.get('damage', 0)} 点 · {row.get('hits', 0)} 刀")
+        for index, row in enumerate(rows, 1)
+    ]
+    return _dashboard_html("本轮输出排行", f"目标 Boss：{boss_name}", [("伤害榜", rank_rows)], variant="rank", pig="🏁")
+
+
+def build_hall_html(rows: list[dict]) -> str:
+    hall_rows = [
+        (
+            f"第{row.get('generation', 1)}代 · {row.get('boss_name', '小猪')}",
+            f"{row.get('killer_name', '群友')} 击杀 · 输出 {row.get('total_damage', 0)}",
+        )
+        for row in rows
+    ]
+    return _dashboard_html("弑猪名人堂", "最新击杀记录排在最前", [("历史战绩", hall_rows)], variant="hall", pig="🐖")
 
 
 # ---------- T2I 图卡（use_image=true 时） ----------
 
 _CARD_CSS = """
 <style>
-body { margin: 0; padding: 24px; background: #14151a; color: #e8e8f0;
-       font-family: "Microsoft YaHei", "PingFang SC", sans-serif; width: 560px; }
-.card { background: #1e2028; border-radius: 14px; padding: 22px 24px;
-        border: 1px solid #33364a; }
+body { margin: 0; padding: 28px; background: #fff8f4; color: #5b444d;
+       font-family: "Microsoft YaHei", "PingFang SC", sans-serif; width: 560px; position: relative; }
+body:before, body:after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+body:before { opacity: .9;
+  background: radial-gradient(circle at 10% 8%, rgba(255,184,199,.48), transparent 28%),
+  radial-gradient(circle at 92% 20%, rgba(255,210,145,.43), transparent 27%),
+  linear-gradient(120deg, transparent 49.6%, rgba(236,163,177,.17) 50%, transparent 50.4%),
+  linear-gradient(30deg, transparent 49.7%, rgba(121,201,204,.14) 50%, transparent 50.3%);
+  background-size: auto, auto, 150px 120px, 150px 120px; }
+.card { position: relative; z-index: 1; background: rgba(255,255,255,.86); border-radius: 26px; padding: 22px 24px;
+        border: 1px solid rgba(255,255,255,.95); box-shadow: 0 18px 48px rgba(177,112,131,.16); }
 .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.name { font-size: 26px; font-weight: 700; }
-.title { font-size: 15px; color: #f0b429; }
-.meta { font-size: 13px; color: #9aa0b4; margin-top: 4px; }
-.bar-wrap { margin: 18px 0 6px; background: #2a2d3a; border-radius: 9px;
-            height: 26px; overflow: hidden; border: 1px solid #3a3e52; }
+.name { font-size: 26px; font-weight: 700; color: #5a3f49; }
+.title { font-size: 15px; color: #bc7182; }
+.meta { font-size: 13px; color: #987985; margin-top: 4px; }
+.bar-wrap { margin: 18px 0 6px; background: #ffe9eb; border-radius: 999px;
+            height: 26px; overflow: hidden; border: 1px solid #ffd7de; }
 .bar { height: 100%; border-radius: 9px;
-       background: linear-gradient(90deg, #e5484d, #f07a3f); }
-.bar.enraged { background: linear-gradient(90deg, #ff2d55, #ff9500);
+       background: linear-gradient(90deg, #ff9eb3, #f8c171); }
+.bar.enraged { background: linear-gradient(90deg, #f77996, #ffad58);
                animation: none; }
-.hp-num { font-size: 15px; color: #e8e8f0; }
-.tag { display: inline-block; margin-top: 10px; padding: 2px 10px;
-       border-radius: 999px; background: #3a1d24; color: #ff7a90;
+.hp-num { font-size: 15px; color: #684c56; }
+.tag { display: inline-block; margin-top: 10px; padding: 3px 10px;
+       border-radius: 999px; background: #ffe3e8; color: #cf617a;
        font-size: 13px; }
-.fight { margin-top: 14px; font-size: 14px; color: #c6cadb; }
-.top { margin-top: 10px; font-size: 14px; color: #f0b429; }
+.fight { margin-top: 14px; font-size: 14px; color: #856b75; }
+.top { margin-top: 10px; font-size: 14px; color: #bd7b42; }
+.panel-card, .dashboard-card { border-top: 4px solid var(--accent, #f4a2b3); }
+.panel-kicker { color: var(--accent-deep, #ba7483); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; }
+.panel-rule { height: 1px; margin: 14px 0; background: linear-gradient(90deg,var(--accent, #f3a5b5),transparent); }
+.panel-text { margin: 0; white-space: pre-wrap; font: 14px/1.7 "Microsoft YaHei", "PingFang SC", sans-serif; color: #644d56; }
+.dashboard-title { margin-top: 4px; color: #5a4049; font-size: 29px; font-weight: 700; }
+.dashboard-subtitle { margin: 5px 0 18px; color: #917782; font-size: 14px; }
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.data-section { overflow: hidden; border: 1px solid var(--accent-soft, #f5dce2); border-radius: 16px; background: rgba(255,255,255,.74); }
+.data-section:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.data-section h2 { margin: 0; padding: 9px 12px; color: var(--accent-deep, #b66d7d); font-size: 14px; background: var(--accent-wash, #fff0f3); }
+.data-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 12px; border-top: 1px dashed var(--accent-soft, #f2dfe3); font-size: 13px; }
+.data-row span { color: #967d86; }
+.data-row strong { max-width: 66%; color: #59454d; text-align: right; font-weight: 600; }
+.empty { padding: 14px 12px; color: #9d8690; font-size: 13px; }
+.pig-float { position: absolute; right: 22px; top: 16px; font-size: 42px; filter: drop-shadow(0 5px 6px rgba(224,136,157,.22)); }
+.view-profile { --accent:#f1a0b4; --accent-deep:#bd6f83; --accent-soft:#f5dce3; --accent-wash:#fff0f4; }
+.view-inventory { --accent:#83cbd2; --accent-deep:#4b9ea8; --accent-soft:#d4eef0; --accent-wash:#ebfbfb; }
+.view-titles { --accent:#bfa7e5; --accent-deep:#8466b7; --accent-soft:#e7ddf6; --accent-wash:#f5f0fc; }
+.view-rank { --accent:#82c5ae; --accent-deep:#4f977e; --accent-soft:#d5ede3; --accent-wash:#effaf4; }
+.view-hall { --accent:#edbc78; --accent-deep:#b97b34; --accent-soft:#f8e7c9; --accent-wash:#fff8e9; }
+.view-help { --accent:#8eb9e9; --accent-deep:#5d86b5; --accent-soft:#dceafb; --accent-wash:#f0f7ff; }
+.view-status { --accent:#f2a276; --accent-deep:#bd6d48; --accent-soft:#f8dfd1; --accent-wash:#fff2eb; }
+/* 同一套「网络节点」语言下，各页面使用不同的内容隐喻而非仅换色。 */
+.view-profile:after { background:
+  radial-gradient(circle at 13% 79%, #f4a1b5 0 4px, transparent 5px),
+  radial-gradient(circle at 87% 76%, #f2bd83 0 5px, transparent 6px),
+  linear-gradient(151deg, transparent 47%, rgba(230,136,160,.28) 47.3%, rgba(230,136,160,.28) 47.8%, transparent 48.1%); }
+.view-profile .dashboard-title { letter-spacing: .4px; }
+.view-profile .data-section:first-child { background: linear-gradient(135deg, rgba(255,241,245,.96), rgba(255,255,255,.78)); }
+.view-profile .data-section:first-child h2:before { content: "● "; }
+.view-inventory:after { opacity: .72; background-image:
+  radial-gradient(rgba(79,164,171,.26) 1.2px, transparent 1.8px),
+  linear-gradient(90deg, transparent 49.5%, rgba(89,180,184,.12) 50%, transparent 50.5%),
+  linear-gradient(transparent 49.5%, rgba(89,180,184,.12) 50%, transparent 50.5%);
+  background-size: 20px 20px, 72px 72px, 72px 72px; background-position: 0 0, 11px 19px, 11px 19px; }
+.view-inventory .data-section { border-radius: 12px 19px 12px 19px; }
+.view-inventory .data-section h2:before { content: "▦ "; }
+.view-titles:after { opacity: .78; background:
+  radial-gradient(ellipse at 86% 16%, transparent 0 27px, rgba(154,120,204,.20) 28px 29px, transparent 30px),
+  radial-gradient(ellipse at 16% 83%, transparent 0 34px, rgba(154,120,204,.17) 35px 36px, transparent 37px),
+  radial-gradient(circle at 84% 16%, rgba(178,145,220,.56) 0 4px, transparent 5px),
+  radial-gradient(circle at 16% 83%, rgba(178,145,220,.45) 0 5px, transparent 6px); }
+.view-titles .data-section { border-radius: 22px 22px 10px 10px; }
+.view-titles .data-section h2:before { content: "✦ "; }
+.view-rank:after { opacity: .7; background:
+  repeating-linear-gradient(153deg, transparent 0 24px, rgba(83,157,129,.13) 25px 27px, transparent 28px 51px),
+  radial-gradient(circle at 88% 12%, rgba(105,190,159,.42) 0 5px, transparent 6px),
+  radial-gradient(circle at 12% 86%, rgba(105,190,159,.38) 0 5px, transparent 6px); }
+.view-rank .data-section { border-radius: 18px; }
+.view-rank .data-section h2:before { content: "↗ "; }
+.view-rank .data-row:first-of-type { background: linear-gradient(90deg, rgba(231,249,240,.95), rgba(255,255,255,.6)); }
+.view-rank .data-row:first-of-type strong { color: #388064; }
+.view-hall:after { opacity: .78; background:
+  radial-gradient(circle at 14% 14%, rgba(234,183,102,.42) 0 5px, transparent 6px),
+  radial-gradient(circle at 88% 82%, rgba(234,183,102,.38) 0 6px, transparent 7px),
+  repeating-radial-gradient(ellipse at 50% 50%, transparent 0 29px, rgba(204,151,75,.10) 30px 31px, transparent 32px 57px); }
+.view-hall .data-section { border: 2px solid var(--accent-soft); border-radius: 8px 22px 8px 22px; }
+.view-hall .data-section h2:before { content: "♛ "; }
+.view-help .data-section h2:before { content: "⌁ "; }
+.view-status:after { opacity: .65; background:
+  radial-gradient(circle at 90% 10%, rgba(240,150,108,.45) 0 5px, transparent 6px),
+  radial-gradient(circle at 10% 88%, rgba(240,150,108,.37) 0 4px, transparent 5px),
+  linear-gradient(35deg, transparent 46%, rgba(239,156,118,.16) 46.4%, rgba(239,156,118,.16) 46.9%, transparent 47.3%); }
 </style>
 """
 
@@ -375,7 +542,7 @@ def build_boss_html(
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">{_CARD_CSS}</head>
-<body><div class="card">
+<body class="view-status"><div class="card"><div class="pig-float">🐷</div>
   <div class="head">
     <span class="name">⚔️ {name}</span>
     <span class="title">{title}</span>
