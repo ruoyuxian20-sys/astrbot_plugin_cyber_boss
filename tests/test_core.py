@@ -3,13 +3,70 @@
 import os
 import random
 import sys
+import logging
+from types import ModuleType
 
 sys.path.insert(
     0,
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
 )
 
-from cyber_boss.core import engine, flavor, render, storage
+
+def _install_astrbot_stub() -> None:
+    """让入口层辅助方法也能在未安装 AstrBot 的开发环境中测试。"""
+    try:
+        import astrbot.api  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+
+    class _Star:
+        def __init__(self, context):
+            self.context = context
+
+    class _Filter:
+        class PermissionType:
+            ADMIN = "admin"
+
+        @staticmethod
+        def command(*_args, **_kwargs):
+            return lambda func: func
+
+        @staticmethod
+        def command_group(*_args, **_kwargs):
+            def decorate_group(func):
+                func.command = lambda *_a, **_kw: (lambda child: child)
+                return func
+
+            return decorate_group
+
+        @staticmethod
+        def permission_type(*_args, **_kwargs):
+            return lambda func: func
+
+    astrbot = ModuleType("astrbot")
+    api = ModuleType("astrbot.api")
+    event = ModuleType("astrbot.api.event")
+    star = ModuleType("astrbot.api.star")
+    api.AstrBotConfig = dict
+    api.logger = logging.getLogger("cyber_boss_test")
+    event.AstrMessageEvent = object
+    event.filter = _Filter
+    star.Context = object
+    star.Star = _Star
+    sys.modules.update(
+        {
+            "astrbot": astrbot,
+            "astrbot.api": api,
+            "astrbot.api.event": event,
+            "astrbot.api.star": star,
+        }
+    )
+
+
+_install_astrbot_stub()
+
+from cyber_boss.core import economy, engine, flavor, render, storage
 
 # ---------- 工具 ----------
 
@@ -157,6 +214,27 @@ def test_enrage_threshold_and_counter_bias():
     assert enraged > calm + 0.03, f"狂暴未提高反击率: {enraged} vs {calm}"
 
 
+def test_event_weights_match_documented_percentages():
+    assert sum(weight for _, weight in engine._WEIGHTS_NORMAL) == 100
+    assert sum(weight for _, weight in engine._WEIGHTS_ENRAGED) == 100
+    assert dict(engine._WEIGHTS_NORMAL)["hit"] == 65
+    assert dict(engine._WEIGHTS_ENRAGED)["counter"] == 14
+
+
+def test_equipment_modifiers_change_attack_and_counter_can_be_blocked():
+    seed, _ = _attack_until("counter", _boss())
+    blocked = engine.attack(
+        random.Random(seed), _boss(), "张三", modifiers={"counter_block": 1.0}
+    )
+    assert blocked.kind == "hit"
+    assert blocked.counter_blocked
+    assert "格挡" in "\n".join(blocked.triggers)
+
+    _, normal = _attack_until("hit", _boss())
+    _, boosted = _attack_until("hit", _boss(), modifiers={"flat_damage": 20})
+    assert boosted.damage >= normal.damage
+
+
 def test_kill_revives_with_growth():
     boss = _boss(hp=10, level=3, generation=5)
     _, r = _attack_until("hit", boss)
@@ -213,13 +291,22 @@ def test_load_broken_file(tmp_path):
     assert data["boss"] is None and data["players"] == {}
 
 
+def test_old_player_data_is_migrated_to_economy_schema(tmp_path):
+    path = tmp_path / "old.json"
+    path.write_text('{"boss": null, "fight": null, "players": {"u1": {"name": "张三", "total_damage": 7}}, "hall": []}', encoding="utf-8")
+    player = storage.load_group_data(str(path))["players"]["u1"]
+    assert player["gold"] == player["marks"] == 0
+    assert player["inventory"] == {}
+    assert set(player["equipped"]) == set(economy.SLOTS)
+
+
 def test_record_attack_accumulates_and_grants_titles():
     data = _data_with_fight()
     storage.record_attack(data, "u1", "张三", _Res("hit", 40), now=100.0)
     storage.record_attack(data, "u1", "张三", _Res("crit", 60), now=101.0)
     storage.record_attack(data, "u2", "李四", _Res("mercy", 0, 30), now=102.0)
     board = data["fight"]["board"]
-    assert board["u1"] == {"name": "张三", "damage": 100, "hits": 2}
+    assert board["u1"] == {"name": "张三", "damage": 100, "hits": 2, "first_attack_at": 100.0}
     assert data["fight"]["started_at"] == 100.0  # 第一刀时间
     p1 = data["players"]["u1"]
     assert p1["total_damage"] == 100 and p1["crit"] == 1
@@ -263,6 +350,99 @@ def test_settle_kill_flow():
     assert storage.hall_rows(data)[0]["generation"] == 1  # 未换 Boss 代数不变
 
 
+def test_kill_marks_and_tie_breaker():
+    data = _data_with_fight()
+    storage.record_attack(data, "u1", "甲", _Res("hit", 500), now=10.0)
+    storage.record_attack(data, "u1", "甲", _Res("hit", 0), now=11.0)
+    storage.record_attack(data, "u2", "乙", _Res("hit", 500), now=12.0)
+    entry = storage.settle_kill(data, "u2", "乙", _Res("hit", 1), now=20.0)
+    assert entry["top_id"] == "u1"  # 同伤害时攻击次数更多者获 MVP
+    assert entry["rewards"]["u1"]["marks"] == 9  # 保底 1 + 贡献 4 + MVP 4
+    assert entry["rewards"]["u2"]["marks"] == 8  # 保底 1 + 贡献 4 + 补刀 3
+
+    solo = _data_with_fight()
+    storage.record_attack(solo, "u3", "丙", _Res("hit", 1000), now=1.0)
+    solo_entry = storage.settle_kill(solo, "u3", "丙", _Res("hit", 1), now=2.0)
+    assert solo_entry["double_crown"]
+    assert solo_entry["rewards"]["u3"]["marks"] == 12
+    assert "double_crown" in solo["players"]["u3"]["titles"]
+
+
+def test_economy_purchase_equip_arm_and_title_flow():
+    data = _data_with_fight()
+    player = storage.ensure_player(data, "u1", "张三", now=1.0)
+    player.update({"gold": 20, "marks": 20, "total_damage": 9000, "kills": 1})
+    assert not storage.buy_item(data, "u1", "张三", "MW3", 1, now=1.5)[0]
+    ok, _, item = storage.buy_item(data, "u1", "张三", "GW1", 1, now=2.0)
+    assert ok and item["id"] == "GW1"
+    assert storage.equip_item(data, "u1", "张三", "GW1", now=3.0)[0]
+    assert data["players"]["u1"]["equipped"]["weapon"] == "GW1"
+    assert not storage.buy_item(data, "u1", "张三", "GW1", 1, now=4.0)[0]
+    assert storage.buy_item(data, "u1", "张三", "C01", 2, now=5.0)[0]
+    assert storage.arm_consumable(data, "u1", "张三", "C01", now=6.0)[0]
+    assert storage.consume_armed_consumable(data["players"]["u1"])["id"] == "C01"
+    assert data["players"]["u1"]["inventory"]["C01"] == 1
+    assert storage.set_active_title(data, "u1", "张三", "regicide", now=7.0)[0]
+    report = storage.player_report(data, "u1", "张三")
+    assert report["active_title_name"] == "弑猪者Lv1"
+
+
+def test_economy_limits_and_pages():
+    player = {"total_damage": 0, "inventory": {}}
+    rows, page, pages = economy.shop_page(player, 99)
+    assert len(economy.PRODUCTS) == 56
+    assert page == pages == 7 and len(rows) == 8
+    for slot in economy.SLOTS:
+        slot_items = [item for item in economy.PRODUCTS if item["slot"] == slot]
+        assert len(slot_items) == 12
+        assert sum(item["currency"] == "gold" for item in slot_items) == 6
+        assert sum(item["currency"] == "marks" for item in slot_items) == 6
+    modifiers = economy.combat_modifiers(
+        {
+            "inventory": {"GW2": 1, "MW1": 1, "C02": 1},
+            "equipped": {"weapon": "MW1", "offhand": None, "armor": None, "accessory": None},
+            "titles": [],
+            "active_title": None,
+            "armed_consumable": "C02",
+            "kills": 0,
+        }
+    )
+    assert modifiers["damage_pct"] <= 0.70
+
+
+def test_economy_page_rendering_and_panel_escaping():
+    report = storage.player_report(_data_with_fight(), "u1", "<刀客>")
+    rows, page, pages = economy.shop_page(report, 1)
+    assert "小猪商店" in render.format_shop_text(rows, page, pages, report)
+    assert "我的背包" in render.format_inventory_text(report)
+    assert "称号收藏" in render.format_titles_text(report)
+    panel = render.build_panel_html("<商店>", "<script>")
+    assert "&lt;商店&gt;" in panel and "&lt;script&gt;" in panel
+
+
+def test_catalog_sections_and_exact_name_purchase():
+    data = _data_with_fight()
+    player = storage.ensure_player(data, "u1", "张三", now=1.0)
+    player.update({"gold": 100, "total_damage": 3000})
+    title, sections = economy.shop_sections(player, "全览")
+    assert title.endswith("全目录") and len(sections) == 9
+    assert sum(len(rows) for _, rows in sections) == 56
+    title, affordable = economy.shop_sections(player, "可买")
+    assert title.endswith("当前可购买") and affordable
+    ok, _, item = storage.buy_item(data, "u1", "张三", "加粗铅笔", 1, now=2.0)
+    assert ok and item["id"] == "GW4"
+    catalog_html = render.build_shop_catalog_html("<商店>", sections, player)
+    assert "&lt;商店&gt;" in catalog_html and "磨刀石" in catalog_html
+
+
+def test_help_topics_cover_public_command_groups():
+    from cyber_boss import main
+
+    assert set(main._HELP_TOPICS) == {"战斗", "商店", "装备", "称号"}
+    assert "/boss 商店 可买" in main._HELP_TOPICS["商店"]
+    assert "/砍猪" in main._HELP_TEXT
+
+
 def test_ranking_sorted():
     data = _data_with_fight()
     for uid, name, dmg in (("u1", "甲", 100), ("u2", "乙", 300), ("u3", "丙", 200)):
@@ -279,8 +459,8 @@ def test_player_report_titles():
     assert report["display_titles"] == []  # 无击杀无成就
     storage.settle_kill(data, "u1", "张三", _Res("hit", 10))
     report = storage.player_report(data, "u1")
-    assert report["display_titles"] == ["弑猪者Lv1", "主力输出"]
-    assert storage.player_report(data, "nobody") is None
+    assert report["display_titles"] == ["弑猪者Lv1", "主力输出", "双冠斩首"]
+    assert storage.player_report(data, "nobody")["gold"] == 0
 
 
 # ---------- 渲染 ----------
@@ -317,7 +497,7 @@ def test_format_outputs_shape():
     assert render.format_hall_text(hall).startswith("📜")
 
     me = render.format_me_text(None, "小猪")
-    assert "/砍" in me
+    assert "/砍猪" in me
 
 
 def test_format_kill_text():
@@ -390,3 +570,42 @@ def test_at_target_duck_typing():
         message_obj = _Broken()
 
     assert bot._at_target(_BrokenMsg()) == ("", "")
+
+
+def test_group_path_is_safe_and_keeps_normal_ids_readable(tmp_path):
+    from cyber_boss.main import CyberBoss
+
+    bot = CyberBoss(None, {})
+    bot._data_dir = lambda: str(tmp_path)
+    assert bot._group_path("12345").endswith("12345.json")
+    unsafe = bot._group_path("../outside")
+    assert os.path.dirname(unsafe) == str(tmp_path)
+    assert os.path.basename(unsafe).startswith("key_")
+    assert os.path.basename(unsafe).endswith(".json")
+
+
+def test_flush_keeps_failed_groups_dirty_for_retry(tmp_path, monkeypatch):
+    from cyber_boss.main import CyberBoss
+
+    bot = CyberBoss(None, {})
+    bot._data_dir = lambda: str(tmp_path)
+    bot._groups = {"ok": {"state": "ok"}, "bad": {"state": "bad"}}
+    bot._dirty = {"ok", "bad"}
+    bot._ops_since_save = 1
+    saved = []
+
+    def save_once(path, data):
+        if data["state"] == "bad":
+            raise OSError("disk full")
+        saved.append(path)
+
+    monkeypatch.setattr(storage, "save_group_data", save_once)
+    bot._flush(force=True)
+    assert len(saved) == 1
+    assert bot._dirty == {"bad"}
+    assert bot._ops_since_save == 20
+
+    monkeypatch.setattr(storage, "save_group_data", lambda path, data: saved.append(path))
+    bot._flush(force=True)
+    assert len(saved) == 2
+    assert not bot._dirty

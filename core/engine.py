@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
+from typing import Mapping
 
 from . import flavor
 
 # 事件权重表（合计 100）：普通 / 暴击 / 闪避 / 反击 / 心软 / 神器
 _WEIGHTS_NORMAL = (
-    ("hit", 60.0),
+    ("hit", 65.0),
     ("crit", 15.0),
     ("dodge", 10.0),
     ("counter", 7.0),
@@ -18,9 +19,9 @@ _WEIGHTS_NORMAL = (
 )
 # 狂暴期：反击概率翻倍，普通命中让位
 _WEIGHTS_ENRAGED = (
-    ("hit", 50.0),
+    ("hit", 58.0),
     ("crit", 15.0),
-    ("dodge", 8.0),
+    ("dodge", 10.0),
     ("counter", 14.0),
     ("mercy", 2.5),
     ("artifact", 0.5),
@@ -40,6 +41,8 @@ class AttackResult:
     killed: bool = False
     boss: dict = field(default_factory=dict)
     enraged_before: bool = False  # 出手时 Boss 是否狂暴
+    triggers: list[str] = field(default_factory=list)
+    counter_blocked: bool = False
 
 
 def new_boss(
@@ -87,15 +90,32 @@ def attack(
     player_name: str,
     *,
     hp_growth: float = 1.2,
+    modifiers: Mapping[str, float] | None = None,
 ) -> AttackResult:
     """砍一刀：判定事件、结算伤害，血量归零时当场升级复活。
 
     不修改入参 boss，返回的新 boss 由调用方落库。
     """
     player = player_name or "群友"
+    modifiers = modifiers or {}
     target = boss_display_name(boss)
     enraged = is_enraged(boss)
     kind = _roll_kind(rng, enraged)
+    triggers: list[str] = []
+    counter_blocked = False
+    if kind == "dodge" and rng.random() < float(modifiers.get("dodge_reroll", 0.0)):
+        kind = _roll_kind(rng, enraged)
+        triggers.append("🔁 闪避被重掷")
+    if kind == "counter" and rng.random() < float(modifiers.get("counter_block", 0.0)):
+        kind = "hit"
+        counter_blocked = True
+        triggers.append("🛡️ 成功格挡反击")
+    if kind == "hit" and rng.random() < float(modifiers.get("crit_bonus", 0.0)):
+        kind = "crit"
+        triggers.append("⭐ 装备强化暴击")
+    if kind in ("hit", "crit") and rng.random() < float(modifiers.get("artifact_bonus", 0.0)):
+        kind = "artifact"
+        triggers.append("⚡ 装备唤醒神器")
 
     hp = int(boss.get("hp", 0))
     max_hp = max(1, int(boss.get("max_hp", 1)))
@@ -121,10 +141,26 @@ def attack(
         )
     elif kind == "mercy":
         heal = rng.randint(20, 80)
+        heal = max(0, round(heal * (1 + float(modifiers.get("mercy_heal_pct", 0.0)))))
         line = f"💗 心软！{rng.choice(flavor.MERCY_LINES).format(player=player, boss=target)}"
     else:  # artifact
         damage = 500 * max(1, int(boss.get("level", 1)))
         line = f"⚡ 神器降世！{rng.choice(flavor.ARTIFACT_LINES).format(player=player, boss=target)}"
+
+    if damage:
+        damage += int(modifiers.get("flat_damage", 0))
+        multiplier = 1 + float(modifiers.get("damage_pct", 0.0))
+        if enraged:
+            multiplier += float(modifiers.get("low_hp_damage_pct", 0.0))
+        if kind == "artifact":
+            multiplier += float(modifiers.get("artifact_damage_pct", 0.0))
+        if kind == "crit":
+            multiplier += float(modifiers.get("crit_damage_pct", 0.0))
+        damage = max(1, round(damage * multiplier))
+        if rng.random() < float(modifiers.get("combo_chance", 0.0)):
+            combo = max(1, round(damage * 0.5))
+            damage += combo
+            triggers.append(f"🔗 连击追加 {combo} 点伤害")
 
     hp = max(0, min(max_hp, hp + heal) - damage)
     killed = hp <= 0
@@ -147,4 +183,6 @@ def attack(
         killed=killed,
         boss=new,
         enraged_before=enraged,
+        triggers=triggers,
+        counter_blocked=counter_blocked,
     )

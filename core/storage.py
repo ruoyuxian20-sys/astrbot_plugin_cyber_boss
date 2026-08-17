@@ -1,4 +1,4 @@
-"""按群隔离的 JSON 持久化：Boss 状态、本轮输出板、玩家成就、名人堂。"""
+"""按群隔离的 JSON 持久化：战局、个人养成、商店交易与名人堂。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,9 @@ import json
 import os
 import time
 
-from . import flavor
+from . import economy, flavor
 
-# 名人堂最多保留条数，防止数据文件无限膨胀
 _HALL_LIMIT = 50
-
-# 统计事件字段名与 engine 事件 kind 的映射
 _KIND_STATS = {
     "hit": "hits",
     "crit": "crit",
@@ -20,12 +17,10 @@ _KIND_STATS = {
     "mercy": "mercy",
     "artifact": "artifact",
 }
-
-# 成就称号的触发阈值（累计次数）
 _TITLE_THRESHOLDS = {
-    "filial": ("mercy", 5),  # 小猪孝子：心软 5 次
-    "hospitalized": ("countered", 10),  # 住院常客：被反击 10 次
-    "coder": ("artifact", 1),  # 代码术士：触发过神器
+    "filial": ("mercy", 5),
+    "hospitalized": ("countered", 10),
+    "coder": ("artifact", 1),
 }
 
 
@@ -33,28 +28,72 @@ def empty_group() -> dict:
     return {"boss": None, "fight": None, "players": {}, "hall": [], "updated_at": 0.0}
 
 
+def _new_player(name: str, now: float) -> dict:
+    return {
+        "name": name or "群友",
+        "total_damage": 0,
+        "kills": 0,
+        "hits": 0,
+        "crit": 0,
+        "dodged": 0,
+        "countered": 0,
+        "mercy": 0,
+        "artifact": 0,
+        "titles": [],
+        "gold": 0,
+        "marks": 0,
+        "inventory": {},
+        "equipped": {slot: None for slot in economy.SLOTS},
+        "active_title": None,
+        "armed_consumable": None,
+        "updated_at": now,
+    }
+
+
+def _normalize_player(player: dict, name: str = "", now: float = 0.0) -> dict:
+    if not isinstance(player, dict):
+        return _new_player(name, now)
+    defaults = _new_player(name or str(player.get("name") or "群友"), now)
+    for key, default in defaults.items():
+        if key not in player or player[key] is None:
+            player[key] = default
+    if not isinstance(player["titles"], list):
+        player["titles"] = []
+    if not isinstance(player["inventory"], dict):
+        player["inventory"] = {}
+    if not isinstance(player["equipped"], dict):
+        player["equipped"] = {}
+    for slot in economy.SLOTS:
+        player["equipped"].setdefault(slot, None)
+    for key in ("gold", "marks", "total_damage", "kills", "hits", "crit", "dodged", "countered", "mercy", "artifact"):
+        try:
+            player[key] = max(0, int(player.get(key, 0)))
+        except (TypeError, ValueError):
+            player[key] = 0
+    return player
+
+
 def load_group_data(path: str) -> dict:
-    """读取群数据文件；不存在或损坏时返回空结构。"""
+    """读取并迁移群数据；文件损坏时返回空结构。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             return empty_group()
-        for key, default in (
-            ("boss", None),
-            ("fight", None),
-            ("players", {}),
-            ("hall", []),
-        ):
-            if key not in data or data[key] is None:
-                data[key] = default() if callable(default) else default
-        if not isinstance(data["players"], dict):
-            data["players"] = {}
-        if not isinstance(data["hall"], list):
-            data["hall"] = []
-        return data
     except (OSError, ValueError):
         return empty_group()
+    for key, default in (("boss", None), ("fight", None), ("players", {}), ("hall", [])):
+        if key not in data or data[key] is None:
+            data[key] = default() if callable(default) else default
+    if not isinstance(data["players"], dict):
+        data["players"] = {}
+    if not isinstance(data["hall"], list):
+        data["hall"] = []
+    for uid, player in list(data["players"].items()):
+        data["players"][str(uid)] = _normalize_player(player)
+        if str(uid) != uid:
+            del data["players"][uid]
+    return data
 
 
 def save_group_data(path: str, data: dict) -> None:
@@ -68,22 +107,15 @@ def save_group_data(path: str, data: dict) -> None:
     os.replace(tmp_path, path)
 
 
-def _player(data: dict, user_id: str, name: str, now: float) -> dict:
+def ensure_player(data: dict, user_id: str, name: str = "群友", now: float | None = None) -> dict:
+    now = time.time() if now is None else now
     players = data.setdefault("players", {})
     player = players.get(user_id)
     if player is None:
-        player = {
-            "name": name or "群友",
-            "total_damage": 0,
-            "kills": 0,
-            "hits": 0,
-            "crit": 0,
-            "dodged": 0,
-            "countered": 0,
-            "mercy": 0,
-            "artifact": 0,
-            "titles": [],
-        }
+        player = _new_player(name, now)
+        players[user_id] = player
+    else:
+        player = _normalize_player(player, name, now)
         players[user_id] = player
     if name:
         player["name"] = name
@@ -100,7 +132,6 @@ def _fight(data: dict, now: float) -> dict:
 
 
 def new_titles_gained(player: dict) -> list[str]:
-    """按累计统计判定成就称号；返回本次新获得的称号 key。"""
     gained = []
     titles = player.setdefault("titles", [])
     for key, (stat, need) in _TITLE_THRESHOLDS.items():
@@ -111,50 +142,107 @@ def new_titles_gained(player: dict) -> list[str]:
 
 
 def record_attack(
-    data: dict, user_id: str, name: str, result, now: float | None = None
+    data: dict,
+    user_id: str,
+    name: str,
+    result,
+    *,
+    gold: int = 0,
+    now: float | None = None,
 ) -> dict:
-    """把一次 attack 的结果记入本轮输出板与玩家累计统计。
-
-    result 为 engine.AttackResult；不负责击杀结算（见 settle_kill）。
-    返回更新后的玩家摘要。
-    """
-    now = now or time.time()
+    """记录一次已结算攻击，包含战局输出、个人统计与金币掉落。"""
+    now = time.time() if now is None else now
     fight = _fight(data, now)
     if not fight["board"]:
-        # 本轮第一刀：以这一刀的时间作为本轮开战时间
         fight["started_at"] = now
     row = fight["board"].get(user_id)
     if row is None:
-        row = {"name": name or "群友", "damage": 0, "hits": 0}
+        row = {"name": name or "群友", "damage": 0, "hits": 0, "first_attack_at": now}
         fight["board"][user_id] = row
     if name:
         row["name"] = name
     row["damage"] = int(row.get("damage", 0)) + int(result.damage)
     row["hits"] = int(row.get("hits", 0)) + 1
+    row.setdefault("first_attack_at", now)
 
-    player = _player(data, user_id, name, now)
-    player["total_damage"] = int(player.get("total_damage", 0)) + int(result.damage)
+    player = ensure_player(data, user_id, name, now)
+    player["total_damage"] += int(result.damage)
+    player["gold"] += max(0, int(gold))
     stat = _KIND_STATS.get(result.kind)
     if stat:
-        player[stat] = int(player.get(stat, 0)) + 1
+        player[stat] += 1
     new_titles_gained(player)
     data["updated_at"] = now
     return dict(player)
 
 
+def consume_armed_consumable(player: dict) -> dict | None:
+    item_id = str(player.get("armed_consumable") or "")
+    item = economy.product(item_id)
+    if not item or item["kind"] != "consumable":
+        player["armed_consumable"] = None
+        return None
+    inventory = player.setdefault("inventory", {})
+    if int(inventory.get(item_id, 0)) <= 0:
+        player["armed_consumable"] = None
+        return None
+    inventory[item_id] -= 1
+    if inventory[item_id] <= 0:
+        inventory.pop(item_id, None)
+    player["armed_consumable"] = None
+    return item
+
+
+def _top_row(board: dict) -> tuple[str | None, dict | None]:
+    candidates = [(uid, row) for uid, row in board.items() if int(row.get("damage", 0)) > 0]
+    if not candidates:
+        return None, None
+    candidates.sort(
+        key=lambda entry: (
+            -int(entry[1].get("damage", 0)),
+            -int(entry[1].get("hits", 0)),
+            float(entry[1].get("first_attack_at", 0.0)),
+            str(entry[0]),
+        )
+    )
+    return candidates[0]
+
+
 def settle_kill(
     data: dict, killer_id: str, killer_name: str, result, now: float | None = None
 ) -> dict:
-    """击杀结算：名人堂留名、击杀者计数、授予主力输出、清空本轮战局。
-
-    需在 record_attack 之后、把 result.boss 写回 data["boss"] 之前调用
-    （名人堂要读倒下 Boss 的代数与称号）。
-    """
-    now = now or time.time()
+    """击杀结算：荣誉、印记、名人堂与本轮战局重置。"""
+    now = time.time() if now is None else now
     old_boss = data.get("boss") or {}
     fight = data.get("fight") if isinstance(data.get("fight"), dict) else {"board": {}}
     board = fight.get("board") or {}
     total_damage = sum(int(row.get("damage", 0)) for row in board.values())
+    top_uid, top_row = _top_row(board)
+
+    killer = ensure_player(data, killer_id, killer_name, now)
+    killer["kills"] += 1
+    if top_uid is not None:
+        top_player = ensure_player(data, top_uid, str(top_row.get("name") or "群友"), now)
+        if "top_dps" not in top_player["titles"]:
+            top_player["titles"].append("top_dps")
+    double_crown = top_uid == killer_id and top_uid is not None
+    if double_crown and "double_crown" not in killer["titles"]:
+        killer["titles"].append("double_crown")
+
+    rewards = {}
+    for uid, row in board.items():
+        damage = int(row.get("damage", 0))
+        if damage <= 0:
+            continue
+        player = ensure_player(data, uid, str(row.get("name") or "群友"), now)
+        marks = economy.mark_reward(player, damage, total_damage, is_mvp=uid == top_uid, is_killer=uid == killer_id)
+        player["marks"] += marks
+        rewards[uid] = {
+            "name": player["name"],
+            "marks": marks,
+            "damage": damage,
+            "contribution": damage / total_damage if total_damage else 0.0,
+        }
 
     entry = {
         "generation": int(old_boss.get("generation", 1)),
@@ -163,70 +251,127 @@ def settle_kill(
         "boss_level": int(old_boss.get("level", 1)),
         "killer_id": killer_id,
         "killer_name": killer_name or "群友",
+        "killer_kills": int(killer["kills"]),
         "duration_s": max(0.0, now - float(fight.get("started_at") or now)),
         "total_damage": total_damage,
         "players": len(board),
+        "top_id": top_uid,
+        "top_name": top_row.get("name", "群友") if top_row else "",
+        "top_damage": int(top_row.get("damage", 0)) if top_row else 0,
+        "double_crown": double_crown,
+        "rewards": rewards,
     }
     hall = data.setdefault("hall", [])
     hall.append(entry)
     del hall[:-_HALL_LIMIT]
-
-    killer = _player(data, killer_id, killer_name, now)
-    killer["kills"] = int(killer.get("kills", 0)) + 1
-    entry["killer_kills"] = int(killer["kills"])
-
-    # 主力输出：本轮伤害榜第一（至少要有 1 点伤害）
-    top_uid, top_row = None, None
-    for uid, row in board.items():
-        if top_row is None or int(row.get("damage", 0)) > int(top_row.get("damage", 0)):
-            top_uid, top_row = uid, row
-    if top_uid is not None and int(top_row.get("damage", 0)) > 0:
-        entry["top_name"] = top_row.get("name", "群友")
-        entry["top_damage"] = int(top_row.get("damage", 0))
-        top_player = _player(data, top_uid, top_row.get("name", ""), now)
-        if "top_dps" not in top_player.setdefault("titles", []):
-            top_player["titles"].append("top_dps")
-
     data["fight"] = {"started_at": now, "board": {}}
     data["updated_at"] = now
     return entry
 
 
+def buy_item(data: dict, user_id: str, name: str, item_id: str, quantity: int, now: float | None = None) -> tuple[bool, str, dict | None]:
+    item, resolve_error = economy.resolve_product(item_id)
+    if item is None:
+        return False, resolve_error or "找不到这个商品。", None
+    try:
+        quantity = max(1, int(quantity))
+    except (TypeError, ValueError):
+        return False, "数量必须是正整数。", None
+    if item["kind"] == "equipment":
+        quantity = 1
+    player = ensure_player(data, user_id, name, now)
+    if economy.hunter_rank(player["total_damage"])["level"] < item["rank"]:
+        return False, f"需要猎手 {item['rank']} 阶才能购买。", None
+    inventory = player["inventory"]
+    if item["kind"] == "equipment" and int(inventory.get(item["id"], 0)) > 0:
+        return False, "这件装备已经拥有，不能重复购买。", None
+    if item["kind"] == "consumable" and int(inventory.get(item["id"], 0)) + quantity > 99:
+        return False, "同一种消耗品最多持有 99 个。", None
+    cost = item["price"] * quantity
+    wallet = item["currency"]
+    if int(player.get(wallet, 0)) < cost:
+        currency_name = "金币" if wallet == "gold" else "猪神印记"
+        return False, f"{currency_name}不足，需要 {cost}。", None
+    player[wallet] -= cost
+    inventory[item["id"]] = int(inventory.get(item["id"], 0)) + quantity
+    data["updated_at"] = time.time() if now is None else now
+    return True, f"购买成功：{item['name']} ×{quantity}", item
+
+
+def equip_item(data: dict, user_id: str, name: str, item_id: str, now: float | None = None) -> tuple[bool, str, dict | None]:
+    item = economy.product(item_id)
+    if item is None or item["kind"] != "equipment":
+        return False, "只能装备商店中的装备。", None
+    player = ensure_player(data, user_id, name, now)
+    if int(player["inventory"].get(item["id"], 0)) <= 0:
+        return False, "背包中没有这件装备。", None
+    player["equipped"][item["slot"]] = item["id"]
+    return True, f"已装备 {item['name']} 到{economy.SLOT_NAMES[item['slot']]}栏。", item
+
+
+def unequip_item(data: dict, user_id: str, name: str, slot: str, now: float | None = None) -> tuple[bool, str]:
+    aliases = {"武器": "weapon", "副手": "offhand", "护具": "armor", "饰品": "accessory"}
+    slot = aliases.get(str(slot), str(slot).lower())
+    if slot not in economy.SLOTS:
+        return False, "栏位应为：武器、副手、护具、饰品。"
+    player = ensure_player(data, user_id, name, now)
+    if not player["equipped"].get(slot):
+        return False, f"{economy.SLOT_NAMES[slot]}栏没有装备。"
+    player["equipped"][slot] = None
+    return True, f"已卸下{economy.SLOT_NAMES[slot]}栏装备。"
+
+
+def arm_consumable(data: dict, user_id: str, name: str, item_id: str, now: float | None = None) -> tuple[bool, str, dict | None]:
+    item = economy.product(item_id)
+    if item is None or item["kind"] != "consumable":
+        return False, "只能武装消耗品。", None
+    player = ensure_player(data, user_id, name, now)
+    if int(player["inventory"].get(item["id"], 0)) <= 0:
+        return False, "背包中没有这个消耗品。", None
+    player["armed_consumable"] = item["id"]
+    return True, f"已武装 {item['name']}；会在下一次实际结算的 /砍猪 中消耗。", item
+
+
+def set_active_title(data: dict, user_id: str, name: str, title_id: str, now: float | None = None) -> tuple[bool, str]:
+    player = ensure_player(data, user_id, name, now)
+    title_id = str(title_id).lower()
+    if title_id not in economy.available_titles(player):
+        return False, "该称号尚未解锁。"
+    player["active_title"] = title_id
+    return True, f"已佩戴称号「{economy.title_name(title_id, player)}」。"
+
+
 def ranking(data: dict, limit: int = 10) -> list[dict]:
-    """本轮输出排行（伤害降序）。"""
     fight = data.get("fight")
     board = fight.get("board", {}) if isinstance(fight, dict) else {}
     rows = [
-        {
-            "user_id": uid,
-            "name": row.get("name", "群友"),
-            "damage": int(row.get("damage", 0)),
-            "hits": int(row.get("hits", 0)),
-        }
+        {"user_id": uid, "name": row.get("name", "群友"), "damage": int(row.get("damage", 0)), "hits": int(row.get("hits", 0)), "first_attack_at": float(row.get("first_attack_at", 0.0))}
         for uid, row in board.items()
     ]
-    rows.sort(key=lambda r: (r["damage"], r["hits"]), reverse=True)
+    rows.sort(key=lambda row: (-row["damage"], -row["hits"], row["first_attack_at"], row["user_id"]))
     return rows[: max(1, limit)]
 
 
 def hall_rows(data: dict, limit: int = 10) -> list[dict]:
-    """名人堂（最新在前）。"""
-    hall = data.get("hall") or []
-    rows = list(reversed(hall))
-    return rows[: max(1, limit)]
+    return list(reversed(data.get("hall") or []))[: max(1, limit)]
 
 
-def player_report(data: dict, user_id: str) -> dict | None:
-    """/boss 我 的数据视图。"""
+def player_report(data: dict, user_id: str, name: str = "群友") -> dict:
     player = (data.get("players") or {}).get(user_id)
     if player is None:
-        return None
+        player = _new_player(name, 0.0)
+    else:
+        player = _normalize_player(dict(player), name)
     report = dict(player)
     report["user_id"] = user_id
-    titles = []
-    kills = int(player.get("kills", 0))
-    if kills > 0:
-        titles.append(flavor.regicide_title(kills))
-    titles.extend(flavor.PLAYER_TITLES.get(t, t) for t in player.get("titles", []))
-    report["display_titles"] = titles
+    report["rank"] = economy.hunter_rank(report["total_damage"])
+    report["display_titles"] = [
+        economy.title_name(title_id, report) for title_id in economy.available_titles(report)
+    ]
+    report["title_options"] = [
+        {"id": title_id, "name": economy.title_name(title_id, report), "description": economy.TITLE_META[title_id][1]}
+        for title_id in economy.available_titles(report)
+    ]
+    report["active_title_name"] = economy.title_name(report["active_title"], report) if report.get("active_title") else "未佩戴"
+    report["modifiers"] = economy.combat_modifiers(report)
     return report
