@@ -232,7 +232,7 @@ def format_shop_catalog_text(title: str, sections: list[tuple[str, list[dict]]],
 
 
 def build_shop_catalog_html(title: str, sections: list[tuple[str, list[dict]]], report: dict) -> str:
-    """完整商店长图：一个区块一张紧凑表，适合一次浏览全部商品。"""
+    """完整商店宽图：双栏分区和双列商品，减少移动端长图长度。"""
     rank = report.get("rank") or {"level": 1, "name": "见习猎手"}
     equipped = report.get("equipped") or {}
     equipped_text = " · ".join(
@@ -254,23 +254,24 @@ def build_shop_catalog_html(title: str, sections: list[tuple[str, list[dict]]], 
                 "</div>"
             )
         section_html.append(
-            f"<section><h2>{html_escape.escape(section)}</h2>{''.join(items) or '<p>暂无符合条件的商品</p>'}</section>"
+            f"<section><h2>{html_escape.escape(section)}</h2>"
+            f"<div class=\"section-items\">{''.join(items) or '<p>暂无符合条件的商品</p>'}</div></section>"
         )
     css = """
     <style>
-    body{margin:0;padding:30px;background:#fff8f1;color:#5c4650;font-family:'Microsoft YaHei','PingFang SC',sans-serif;width:900px;position:relative}
+    body{margin:0;padding:26px;background:#fff8f1;color:#5c4650;font-family:'Microsoft YaHei','PingFang SC',sans-serif;width:1240px;position:relative}
     body:before{content:'';position:fixed;inset:0;background:radial-gradient(circle at 10% 6%,rgba(255,193,160,.55),transparent 24%),radial-gradient(circle at 90% 16%,rgba(255,170,192,.43),transparent 24%),linear-gradient(118deg,transparent 49.6%,rgba(236,163,177,.18) 50%,transparent 50.4%),linear-gradient(30deg,transparent 49.7%,rgba(121,201,204,.15) 50%,transparent 50.3%);background-size:auto,auto,150px 120px,150px 120px;pointer-events:none}
     .card{position:relative;background:rgba(255,255,255,.86);border:1px solid #fff;border-radius:28px;padding:26px;box-shadow:0 20px 50px rgba(185,126,112,.16)}
-    h1{margin:0;color:#a85f70;font-size:31px}.meta{margin:8px 0 4px;color:#8f707a;font-size:15px}.equip{margin:0 0 20px;color:#9c7d80;font-size:13px}section{margin:17px 0}
-    h2{margin:0;padding:9px 12px;border-radius:12px;background:linear-gradient(90deg,#fff0e6,#fff8f8);color:#b66b7b;font-size:18px}
-    .shop-item{display:grid;grid-template-columns:270px 1fr;gap:3px 14px;padding:10px;border-bottom:1px dashed #efdde0}.shop-item b{color:#674852;font-size:15px}.shop-item span{color:#c07a4f;font-size:13px}.shop-item small{grid-column:1 / -1;color:#8b7178;font-size:13px}
+    h1{margin:0;color:#a85f70;font-size:31px}.meta{margin:8px 0 4px;color:#8f707a;font-size:15px}.equip{margin:0 0 18px;color:#9c7d80;font-size:13px}.shop-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}section{overflow:hidden;border:1px solid #f4e2df;border-radius:16px;background:rgba(255,255,255,.65)}section:first-child{grid-column:1/-1}
+    h2{margin:0;padding:8px 12px;background:linear-gradient(90deg,#fff0e6,#fff8f8);color:#b66b7b;font-size:16px}.section-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px;padding:0 10px}
+    .shop-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:8px 2px;border-bottom:1px dashed #efdde0;min-height:44px}.shop-item b{overflow:hidden;color:#674852;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.shop-item span{color:#c07a4f;font-size:12px;white-space:nowrap}.shop-item small{grid-column:1 / -1;color:#8b7178;font-size:12px;line-height:1.35}
     .foot{margin-top:20px;color:#a47c87;font-size:13px}.pig{position:absolute;right:25px;top:22px;font-size:46px;filter:drop-shadow(0 5px 6px rgba(230,132,155,.22))}
     </style>"""
     return f"""<!DOCTYPE html><html><head><meta charset=\"utf-8\">{css}</head><body><div class=\"card\"><div class=\"pig\">🐷</div>
     <h1>{html_escape.escape(title)}</h1>
     <div class=\"meta\">💰 {int(report.get('gold', 0))} 金币 · 🪙 {int(report.get('marks', 0))} 印记 · 猎手 {rank['level']} 阶 · {html_escape.escape(rank.get('name', ''))}</div>
     <div class=\"equip\">当前配装：{html_escape.escape(equipped_text)}</div>
-    {''.join(section_html)}
+    <div class="shop-sections">{''.join(section_html)}</div>
     <div class=\"foot\">/boss 购买 &lt;商品ID|完整名称&gt; [数量] · /boss 商店 可买</div>
     </div></body></html>"""
 

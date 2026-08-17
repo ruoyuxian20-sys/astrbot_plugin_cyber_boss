@@ -410,6 +410,14 @@ def test_economy_limits_and_pages():
     assert modifiers["damage_pct"] <= 0.70
 
 
+def test_gold_drop_matches_long_cooldown_economy():
+    assert economy.gold_drop(0, "dodge", {}) == 10
+    assert economy.gold_drop(50, "hit", {}) == 12
+    assert economy.gold_drop(10_000, "artifact", {}) == 40
+    assert economy.gold_drop(50, "hit", {"gold_bonus": 0.30}) == 15
+    assert economy.gold_drop(0, "mercy", {"mercy_gold": 3}) == 13
+
+
 def test_economy_page_rendering_and_panel_escaping():
     report = storage.player_report(_data_with_fight(), "u1", "<刀客>")
     rows, page, pages = economy.shop_page(report, 1)
@@ -442,6 +450,8 @@ def test_catalog_sections_and_exact_name_purchase():
     assert ok and item["id"] == "GW4"
     catalog_html = render.build_shop_catalog_html("<商店>", sections, player)
     assert "&lt;商店&gt;" in catalog_html and "磨刀石" in catalog_html
+    assert 'class="shop-sections"' in catalog_html
+    assert "width:1240px" in catalog_html and "repeat(2,minmax(0,1fr))" in catalog_html
 
 
 def test_help_topics_cover_public_command_groups():
@@ -450,6 +460,9 @@ def test_help_topics_cover_public_command_groups():
     assert set(main._HELP_TOPICS) == {"战斗", "商店", "装备", "称号"}
     assert "/boss 商店 可买" in main._HELP_TOPICS["商店"]
     assert "/砍猪" in main._HELP_TEXT
+    assert "15 分钟" in main._HELP_TOPICS["战斗"]
+    assert main._format_cooldown(900) == "15 分钟"
+    assert main._format_cooldown(61) == "1 分 1 秒"
 
 
 def test_ranking_sorted():

@@ -286,7 +286,9 @@ def combat_modifiers(player: dict) -> dict[str, float]:
 
 
 def gold_drop(damage: int, kind: str, modifiers: dict[str, float]) -> int:
-    gold = 1 + min(9, max(0, int(damage)) // 50)
+    """结算单刀金币：15 分钟冷却下，以较高保底维持养成节奏。"""
+    # 普通命中约 12 金币，高伤事件最高 40 金币；仍受既有收益加成上限约束。
+    gold = 10 + min(30, max(0, int(damage)) // 25)
     if kind == "mercy":
         gold += int(modifiers.get("mercy_gold", 0))
     if kind == "counter":

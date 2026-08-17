@@ -20,8 +20,8 @@
   "attack_cooldown_seconds": {
     "description": "同一个人两次砍 Boss 之间的最小间隔（秒），防刷屏。",
     "type": "float",
-    "default": 3,
-    "hint": "建议 1-30"
+    "default": 900,
+    "hint": "建议 300-1800；默认 900 秒（15 分钟）"
   },
   "ranking_size": {
     "description": "输出排行与名人堂显示的条目数量上限。",

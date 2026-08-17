@@ -36,7 +36,7 @@ from .core.render import (
 _HELP_TEXT = """⚔️ 小猪养成计划 · 指令总览
 
 /砍猪
-    攻击 Boss，掉落金币；已武装消耗品会在本次结算使用
+    攻击 Boss，掉落金币；默认每人 15 分钟一次，冷却中会提示剩余时间
 /boss 状态
     Boss 血条、等级、狂暴和本轮战况
 /boss 养 @某人
@@ -69,6 +69,7 @@ _HELP_TOPICS = {
 
 /砍猪
     发起一次攻击。普通、暴击、闪避、反击、心软、神器都会影响本刀结果。
+    默认每人 15 分钟一次；冷却中会显示剩余时间，重复发送时每分钟至多提醒一次。
     每次实际结算都会掉落金币；冷却和住院拦截时不会消耗已武装道具。
 
 /boss 状态 /boss 排行 /boss 名人堂
@@ -138,6 +139,17 @@ _SUB_WORDS = {
 _SAFE_GROUP_KEY_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 
+def _format_cooldown(seconds: float) -> str:
+    """把剩余冷却压缩成适合聊天提示的中文时长。"""
+    total = max(1, int(seconds + 0.999))
+    minutes, remainder = divmod(total, 60)
+    if minutes and remainder:
+        return f"{minutes} 分 {remainder} 秒"
+    if minutes:
+        return f"{minutes} 分钟"
+    return f"{remainder} 秒"
+
+
 class CyberBoss(Star):
     """小猪养成计划：全群共斗养成小游戏，不调用 LLM。"""
 
@@ -149,9 +161,10 @@ class CyberBoss(Star):
         self._last_save = 0.0
         self._ops_since_save = 0
         self._rng = random.Random()
-        # 住院（被反击）与防刷冷却：内存态，重启即清零，无伤大雅
+        # 住院、攻击冷却与冷却提示限频：内存态，重启即清零，无伤大雅。
         self._hospital: dict[str, float] = {}
         self._cooldown: dict[str, float] = {}
+        self._cooldown_notices: dict[str, float] = {}
 
     # ---------- 工具 ----------
 
@@ -200,9 +213,9 @@ class CyberBoss(Star):
 
     def _cooldown_seconds(self) -> float:
         try:
-            return max(0.0, float(self._cfg("attack_cooldown_seconds", 3)))
+            return max(0.0, float(self._cfg("attack_cooldown_seconds", 900)))
         except Exception:
-            return 3.0
+            return 900.0
 
     def _hp_growth(self) -> float:
         try:
@@ -313,8 +326,13 @@ class CyberBoss(Star):
             for k in [k for k, until in self._hospital.items() if now > until]:
                 self._hospital.pop(k, None)
         if len(self._cooldown) > 512:
-            for k in [k for k, ts in self._cooldown.items() if now - ts > 60]:
+            cooldown = self._cooldown_seconds()
+            for k in [k for k, ts in self._cooldown.items() if now - ts > cooldown]:
                 self._cooldown.pop(k, None)
+                self._cooldown_notices.pop(k, None)
+        if len(self._cooldown_notices) > 512:
+            for k in [k for k, ts in self._cooldown_notices.items() if now - ts > 65]:
+                self._cooldown_notices.pop(k, None)
 
     # ---------- 核心动作：/砍猪 ----------
 
@@ -328,8 +346,16 @@ class CyberBoss(Star):
         now = time.time()
         self._prune_memory(now)
 
-        if now - self._cooldown.get(pkey, 0.0) < self._cooldown_seconds():
-            return  # 冷却中静默忽略，避免刷屏
+        cooldown_left = self._cooldown_seconds() - (now - self._cooldown.get(pkey, 0.0))
+        if cooldown_left > 0:
+            # 连续重复发送时最多每分钟回应一次，既能说明状态也不放大刷屏。
+            if now - self._cooldown_notices.get(pkey, 0.0) >= 60:
+                self._cooldown_notices[pkey] = now
+                yield event.plain_result(
+                    f"⏳ 砍猪冷却中，还需 {_format_cooldown(cooldown_left)}。"
+                    " 本次未结算，不会消耗已武装道具。"
+                )
+            return
         left = self._hospital.get(pkey, 0.0) - now
         if left > 0:
             yield event.plain_result(
